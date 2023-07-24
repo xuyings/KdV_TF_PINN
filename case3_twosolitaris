@@ -7,42 +7,55 @@
 #}
 import deepxde as dde
 import numpy as np
-import tensorflow as tf
+
+def heat_eq_exact_solution(x, t):
+    p = 2
+    q = 1.5
+    t0 = 0.5
+    theta = p*x-4*p**3*(t-t0)
+    kapa = q*x-4*q**3*(t-t0)
+    
+    
+    return  (2*(p**2-q**2)*(p**2+q**2*(1.0 /np.cosh(kapa))**2*(np.sinh(theta))**2))/((p*np.cosh(theta)-q*np.tanh(kapa)*np.sinh(theta))**2)
 
 def func(x):
-    return 2*(1.0 /np.cosh(x[:, 0:1]-1))**2
+    p = 2
+    q = 1.5
+    t0 = 0.25
+    theta = p*x[:,0:1]-4*p**3*(-t0)
+    kapa = q*x[:,0:1]-4*q**3*(-t0)
+    
+    return  (2*(p**2-q**2)*(p**2+q**2*((1.0 /np.cosh(kapa))**2)*(np.sinh(theta))**2))/((p*np.cosh(theta)-q*np.tanh(kapa)*np.sinh(theta))**2)
   
 
 
 def gen_exact_solution():
-    """Generates exact solution for the kdv equation for the given values of x and t."""
+    """Generates exact solution for the heat equation for the given values of x and t."""
     # Number of points in each dimension:
     x_dim, t_dim = (256, 201)
 
     # Bounds of 'x' and 't':
     x_min, t_min = (-10, 0)
-    x_max, t_max = (L, 4)
+    x_max, t_max = (L, 1.0)
 
     # Create tensors:
     t = np.linspace(t_min, t_max, num=t_dim).reshape(t_dim, 1)
     x = np.linspace(x_min, x_max, num=x_dim).reshape(x_dim, 1)
     usol = np.zeros((x_dim, t_dim)).reshape(x_dim, t_dim)
 
-#     # Obtain the value of the exact solution for each generated point:
-#     for i in range(x_dim):
-#         for j in range(t_dim):
-#             usol[i][j] = kdv_eq_exact_solution(x[i], t[j])
+     # Obtain the value of the exact solution for each generated point:
+    for i in range(x_dim):
+        for j in range(t_dim):
+             usol[i][j] = heat_eq_exact_solution(x[i], t[j])
 
     # Save solution:
-    np.savez("kdv_eq_data", x=x, t=t, usol=usol)
-    
-    
+    np.savez("heat_eq_data", x=x, t=t, usol=usol)
 
 
 def gen_testdata():
     """Import and preprocess the dataset with the exact solution."""
     # Load the data:
-    data = np.load("kdv_eq_data.npz")
+    data = np.load("heat_eq_data.npz")
     # Obtain the values for t, x, and the excat solution:
     t, x, exact = data["t"], data["x"], data["usol"].T
     # Process the data and flatten it out (like labels and features):
@@ -55,7 +68,7 @@ def gen_testdata():
 # Problem parameters:
 a = 6  # Thermal diffusivity
 b = 1
-L =40  # Length of the bar
+L = 10  # Length of the bar
 
 # Frequency of the sinusoidal initial conditions
 
@@ -64,25 +77,23 @@ gen_exact_solution()
 
 
 def pde(x, y):
-    """Expresses the PDE residual of the kdv equation."""
+    """Expresses the PDE residual of the heat equation."""
     dy_t = dde.grad.jacobian(y, x, i=0, j=1)
     dy_x = dde.grad.jacobian(y, x, i=0, j=0)
     dy_xx = dde.grad.hessian(y, x, i=0, j=0)
     dy_xxx = dde.grad.jacobian(dy_xx, x, i=0, j=0)
     return dy_t + a * y * dy_x + b * dy_xxx
 
+
 # Computational geometry:
-geom = dde.geometry.Interval(-10, 40)
-timedomain = dde.geometry.TimeDomain(0, 4)
+geom = dde.geometry.Interval(-10, 10)
+timedomain = dde.geometry.TimeDomain(0, 1)
 geomtime = dde.geometry.GeometryXTime(geom, timedomain)
 
 # Initial and boundary conditions:
-bc = dde.PeriodicBC(
-    geomtime, 0, lambda _, on_boundary: on_boundary, derivative_order=0, component=0
-)
-#bc = dde.icbc.PeriodicBC(geomtime,func, lambda _, on_boundary: on_boundary)
-ic = dde.icbc.IC(geomtime, func, lambda _, on_initial: on_initial)
-                                              
+bc = dde.icbc.PeriodicBC(geomtime, 0, lambda _, on_boundary: on_boundary)
+ic = dde.icbc.IC(geomtime, func,lambda _, on_initial: on_initial)
+
 # Define the PDE problem and configurations of the network:
 data = dde.data.TimePDE(
     geomtime,
@@ -98,7 +109,7 @@ model = dde.Model(data, net)
 
 # Build and train the model:
 model.compile("adam", lr=1e-3)
-model.train(iterations=10000)
+model.train(iterations=1000)
 model.compile("L-BFGS")
 losshistory, train_state = model.train()
 
